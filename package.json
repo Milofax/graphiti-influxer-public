@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "graphiti-claude-integration": "github:Milofax/graphiti-claude-integration",
+    "shared-claude-rules": "github:Milofax/shared-claude-rules"
+  }
+}

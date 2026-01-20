@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Volumes/DATEN/Coding/graphiti-influxer/.claude/hooks/prp-ralph-stop.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Volumes/DATEN/Coding/graphiti-influxer/.claude/hooks/shared-claude-rules/pre-tool-use/agent-browser-guard.py"
+          },
+          {
+            "type": "command",
+            "command": "/Volumes/DATEN/Coding/graphiti-influxer/.claude/hooks/shared-claude-rules/pre-tool-use/git-workflow-guard.py"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__mcp-funnel__bridge_tool_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Volumes/DATEN/Coding/graphiti-influxer/.claude/hooks/shared-claude-rules/pre-tool-use/agent-browser-guard.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": []
+  }
+}

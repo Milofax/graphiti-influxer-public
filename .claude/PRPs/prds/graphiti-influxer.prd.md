@@ -53,14 +53,14 @@ Wir wissen dass wir richtig liegen wenn **ein 200-Seiten-PDF fehlerfrei in Episo
 
 ## Open Questions
 
-- [ ] Wie erkennt Influxer bereits ingestete Dateien? (Hash + UUID in lokaler DB, Abgleich mit `get_episodes`)
-- [ ] Optimale Chunk-Groesse fuer Graphiti Episoden?
-- [ ] Rate-Limiting: Wie viele Episoden/Minute vertraegt der MCP-Server?
-- [ ] MCP-Client Library: mcp-python-sdk oder eigene SSE-Implementation?
-- [x] **Entity-Types**: Welche Entity-Types unterstützen? → Document (Buch, Artikel, RFC), Work (Roman) - hardcoded aus graphiti.md
-- [x] **Pflichtfelder pro Type**: Woher kommen die? → Aus graphiti.md Regeln (Buch: Autor+Titel+Jahr+ISBN)
-- [ ] **Default-Mapping**: pdf → Document:Buch, epub → Document:Buch oder Work:Roman?
-- [ ] **ISBN-Extraktion**: Aus Impressum-Seite scannen? (aufwändig, evtl. P2)
+- [x] Wie erkennt Influxer bereits ingestete Dateien? → Hash + UUID in lokaler SQLite DB, Abgleich mit `get_episodes`
+- [x] Optimale Chunk-Groesse fuer Graphiti Episoden? → **Semantisches Chunking** (Paragraph-Gruppen, 500-3000 Zeichen). Nicht seitenbasiert, da Seiten keine logischen Einheiten sind.
+- [x] Rate-Limiting: Wie viele Episoden/Minute vertraegt der MCP-Server? → **Start mit 1 req/s**, bei Bedarf anpassbar via Config
+- [x] MCP-Client Library: mcp-python-sdk oder eigene SSE-Implementation? → **mcp-python-sdk** (offizielle Library)
+- [x] **Entity-Types**: → **Vereinfacht nach Pflichtfeldern**: Gleiche Pflichtfelder = gleicher Typ. Buch und Roman haben identische Pflichtfelder (Autor+Titel+Jahr) → beide als "Buch" behandeln. RFC und Artikel haben unterschiedliche → bleiben getrennt.
+- [x] **Pflichtfelder pro Type**: → Aus graphiti.md Regeln (Buch: Autor+Titel+Jahr, RFC: Nummer+Jahr, Artikel: Autor+Titel+Quelle+Jahr)
+- [x] **Default-Mapping**: → Alle Bücher (auch Romane, Sachbücher) → "Buch". Typ-Erkennung basiert auf Metadaten (DOI → Artikel, RFC in Titel → RFC)
+- [x] **ISBN-Extraktion**: Aus Impressum-Seite scannen? → **Deferred to P2** (aufwändig, Regex-basiert, nicht MVP-kritisch)
 
 ---
 
@@ -93,10 +93,11 @@ Wenn ich ein wichtiges Buch/Dokument habe, will ich es in Graphiti laden, damit 
 | Must | PDF Text-Extraktion | Haupt-Use-Case: Bibliothek einpflegen |
 | Must | EPUB Text-Extraktion | Haupt-Use-Case: Bibliothek einpflegen |
 | Must | **Metadaten-Extraktion** | Autor, Titel, Jahr aus PDF/EPUB extrahieren |
-| Must | **Entity-Type-Bestimmung** | Document (Buch/Artikel/RFC) vs. Work (Roman) |
-| Must | **Pflichtfeld-Validation** | Buch: Autor+Titel+Jahr - gemäß graphiti.md Regeln |
+| Must | **Entity-Type-Bestimmung** | Vereinfacht: Buch, Artikel, RFC (gleiche Pflichtfelder = gleicher Typ) |
+| Must | **Pflichtfeld-Validation** | Buch: Autor+Titel+Jahr, RFC: Nummer+Jahr, Artikel: Autor+Titel+Quelle+Jahr |
 | Must | **Card-basiertes Metadaten-Review** | Inline-editierbar, visuelle Hervorhebung fehlender Felder |
-| Must | **Web-Suche für Metadaten** | OpenLibrary, CrossRef für fehlende Daten |
+| Must | **Source-Type Classification** | Dropdown: Non-Fiction, Academic, Opinion, Fiction, Unknown (Trust-Level) |
+| Must | **Web-Suche für Metadaten** | Nach Typ: ISBN→OpenLibrary, DOI→CrossRef, DE-ISBN→ISBN.de |
 | Must | Semantisches Chunking | Nicht mitten im Satz/Paragraph abschneiden |
 | Must | MCP-Client Integration | Nutzt `add_memory` Tool des MCP-Servers |
 | Must | Group-ID Auswahl | Projekt-spezifische vs. allgemeine Doku |
@@ -133,6 +134,14 @@ Phase 1: Web Interface für PDF + EPUB Upload mit Metadaten-Review und Ingestion
      - Cover-Thumbnail (falls verfügbar)
      - Extrahierte Metadaten (inline-editierbar)
      - Entity-Type Dropdown
+     - **Source-Type Dropdown** (required, Trust-Level):
+       - Non-Fiction / Reference
+       - Academic (peer-reviewed)
+       - Journalism / News
+       - Opinion / Autobiography / Memoir
+       - Fiction
+       - Unknown
+     - ⚠️ Warning for "Opinion/Fiction": "This source is classified as opinion/fiction"
      - Status-Indikator (grün=komplett, rot=Pflichtfelder fehlen)
    - "Search" Button für fehlende Metadaten (OpenLibrary)
 
@@ -176,6 +185,7 @@ Phase 1: Web Interface für PDF + EPUB Upload mit Metadaten-Review und Ingestion
 │  │ Autor: Cal N... │  │ Autor: [????]   │  │ Nummer: 2616    │ │
 │  │ Jahr:  2016     │  │ Jahr:  [????]   │  │ Jahr:  1999     │ │
 │  │ Type:  Buch  ▼  │  │ Type:  Buch  ▼  │  │ Type:  RFC   ▼  │ │
+│  │ Trust: Sachb.▼  │  │ Trust: [????]▼  │  │ Trust: Wiss. ▼  │ │
 │  │ ─────────────── │  │ ─────────────── │  │ ─────────────── │ │
 │  │ ✓ Ready        │  │ ⚠ Missing fields │  │ ✓ Ready        │ │
 │  │ [🔍 Search]     │  │ [🔍 Search]     │  │                 │ │
@@ -219,7 +229,7 @@ GET    /api/mcp/status      - Graphiti MCP Status
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        Browser                          │
-│                  (HTMX + Alpine.js)                     │
+│               (React + TypeScript + Vite)               │
 └─────────────────────────────────────────────────────────┘
                               │
                          HTTP/REST
@@ -258,7 +268,7 @@ GET    /api/mcp/status      - Graphiti MCP Status
 - Web UI ermöglicht bessere UX für Metadaten-Review
 - Docker Container: Einfaches Deployment auf User's Infrastruktur
 - FastAPI: Schnell, async, OpenAPI-Spec automatisch
-- HTMX + Alpine.js: Minimaler JS-Footprint, serverseitiges Rendering
+- React + Vite: Complex state management, modern tooling, mature ecosystem
 - Influxer bleibt unabhängig von Graphiti-Interna
 - MCP-Server Upgrades sind transparent
 
@@ -268,7 +278,7 @@ GET    /api/mcp/status      - Graphiti MCP Status
 |----------|--------|-----------|
 | Language | Python | Gute MCP-Libraries, PDF/EPUB Support |
 | Backend | FastAPI | Async, schnell, OpenAPI-Spec automatisch |
-| Frontend | HTMX + Alpine.js | Minimaler JS, Server-driven UI |
+| Frontend | React + TypeScript + Vite | Complex state management, mature ecosystem (react-dropzone, TanStack Query) |
 | PDF Parser | pymupdf (fitz) | Schnell, Metadaten-Extraktion |
 | EPUB Parser | ebooklib | Standard für EPUB in Python |
 | Chunking | Custom semantic | Paragraph/Section boundaries |
@@ -298,13 +308,16 @@ GET    /api/mcp/status      - Graphiti MCP Status
 
 ## Edge Cases
 
-**96 dokumentierte Edge Cases** in separater Master-Liste: [edge-cases.md](../edge-cases.md)
+**134 dokumentierte Edge Cases** in separater Master-Liste: [edge-cases.md](../edge-cases.md)
 
 | Phase | Cases | Beschreibung |
 |-------|-------|--------------|
-| P1 | 59 | Kritisch für MVP |
-| P2 | 28 | Batch, Resume, Verify |
-| P? | 10 | Future / Low Priority |
+| P1 | 90 | Web Interface MVP (PDF/EPUB, Metadaten, Web UI, API-Suche) |
+| P2 | 20 | Batch & Polish, API-Keys, weitere APIs |
+| P3 | 2 | Markdown Support |
+| P4 | 4 | Testing & Docs |
+| P5 | 5 | CLI Headless-Mode |
+| P? | 13 | Future / Low Priority |
 
 **WICHTIG**: Bei jeder Phasen-Planung (`/prp-plan`) MUSS `edge-cases.md` konsultiert werden, um die relevanten Cases in den Plan aufzunehmen.
 
@@ -314,8 +327,8 @@ GET    /api/mcp/status      - Graphiti MCP Status
 
 | # | Phase | Description | Status | Parallel | Depends | PRP Plan |
 |---|-------|-------------|--------|----------|---------|----------|
-| 1 | Web Interface MVP | FastAPI Backend, HTMX Frontend, PDF/EPUB, Metadaten-Review | pending | - | - | - |
-| 2 | Metadaten-Suche | OpenLibrary Integration, CrossRef für Papers | pending | - | 1 | - |
+| 1 | Web Interface MVP | FastAPI + React, PDF/EPUB, Metadaten-Suche (4 APIs) | **in-progress** | - | - | [phase-1-web-interface-mvp.plan.md](../plans/phase-1-web-interface-mvp.plan.md) |
+| 2 | Batch & Polish | Batch-Presets, History, Concurrent Edit, weitere APIs | pending | - | 1 | - |
 | 3 | Markdown Support | Markdown/Text-Dateien unterstützen | pending | with 4 | 2 | - |
 | 4 | Testing & Docs | Umfassende Tests, Dokumentation | pending | with 3 | 2 | - |
 | 5 | CLI Headless-Mode | Kommandozeilen-Interface für Automatisierung | pending | - | 4 | - |
@@ -329,34 +342,53 @@ GET    /api/mcp/status      - Graphiti MCP Status
     - File Upload Endpoint (multipart/form-data)
     - PDF Text/Metadaten-Extraktion (pymupdf)
     - EPUB Text/Metadaten-Extraktion (ebooklib)
-    - Entity-Type-System (Document:Buch, Work:Roman etc.)
-    - Pflichtfeld-Validation gemäß graphiti.md
-    - Semantisches Chunking
+    - Entity-Type-System (vereinfacht: Buch, Artikel, RFC - nach Pflichtfeldern)
+    - Pflichtfeld-Validation (Buch: Autor+Titel+Jahr, RFC: Nummer+Jahr, Artikel: Autor+Titel+Quelle+Jahr)
+    - Semantisches Chunking (Paragraph-Gruppen, 500-3000 Zeichen)
     - MCP-Client für Graphiti (add_memory, get_episodes)
     - SQLite State (Session-Queue, Datei-Hash → UUIDs)
     - SSE Endpoint für Ingestion-Progress
-  - **Frontend (HTMX + Alpine.js)**:
+    - Rate-Limiting: 1 req/s (konfigurierbar)
+  - **Frontend (React + TypeScript + Vite)**:
     - Drag-and-Drop Upload Zone
     - Card-Layout für Datei-Queue
     - Inline-editierbare Metadaten-Felder
     - Entity-Type Dropdown
+    - **Source-Type Dropdown** (required: Non-Fiction, Academic, Opinion, Fiction, Unknown)
+    - Warning when "Opinion/Fiction" selected
     - Pflichtfeld-Validierung (visuelle Hervorhebung)
     - Group-ID Selector
     - Ingest Button + Progress-Anzeige
   - **Docker**:
     - Dockerfile für Container-Deployment
     - ENV-Konfiguration (MCP-URL, Ports)
-- **Success signal**: PDF hochladen → Metadaten editieren → Ingest → `get_episodes` zeigt alle Chunks
-- **Edge Cases**: #97-#108 (Metadaten), #1-#12 (PDF), #13-#22 (EPUB), #23-#32 (Chunking), #33-#42 (MCP), #44-#50 (State)
+- **Metadaten-Suche** (nach Dokumenttyp):
+    - **ISBN erkannt** → OpenLibrary (Fallback: Google Books)
+    - **DOI erkannt** → CrossRef
+    - **Deutsche ISBN (978-3-...)** → ISBN.de
+    - **Nur Titel** → OpenLibrary Titel-Suche
+    - Auto-Fill bei Suchergebnis
+- **Success signal**: PDF hochladen → Metadaten editieren/suchen → Ingest → `get_episodes` zeigt alle Chunks
+- **Edge Cases (90 total)**:
+  - #1-#12 (PDF), #13-#22 (EPUB), #23-#32 (Chunking)
+  - #33-#42 (MCP/Netzwerk), #44-#50 (State)
+  - #52, #55, #58 (File System)
+  - #59-#63 (Graphiti-spezifisch)
+  - #65-#70 (OCR), #72-#73, #75-#76 (Memory/Performance/Encoding)
+  - #80-#83 (Security/Provenance), #87 (Verification)
+  - #97-#108 (Metadaten/Entity-Types)
+  - #109-#117, #119-#120 (Web Interface)
+  - #121-#134 (Metadaten-Suche APIs)
 
-**Phase 2: Metadaten-Suche**
-- **Goal**: Fehlende Metadaten via Web-Suche ergänzen
+**Phase 2: Batch & Polish**
+- **Goal**: Verfeinerungen für Batch-Workflows und erweiterte APIs
 - **Scope**:
-  - OpenLibrary API Integration (ISBN, Titel → Autor, Jahr)
-  - CrossRef API für akademische Papers (DOI → Metadaten)
-  - "Search" Button in Card-UI
-  - Auto-Fill bei Suchergebnis
-- **Success signal**: Fehlender Autor via OpenLibrary gefunden und in Card übernommen
+  - **API-Key-Konfiguration** für höhere Limits (Google Books, weitere)
+  - Weitere Metadaten-APIs (WorldCat, etc.)
+  - Batch-Presets (alle als "Buch", alle gleiche group_id)
+  - History: Zuletzt verwendete group_ids
+  - Concurrent Edit Locking (#118)
+- **Success signal**: 20+ Dateien effizient in einem Flow verarbeitet
 
 **Phase 3: Markdown Support**
 - **Goal**: Markdown/Text-Dateien unterstützen
@@ -394,15 +426,20 @@ Phase 3 (Markdown) und Phase 4 (Testing) koennen parallel laufen da sie untersch
 
 | Decision | Choice | Alternatives | Rationale |
 |----------|--------|--------------|-----------|
+| **UI Language** | **English first** | German first | Industry standard; i18n can be added later; broader contributor base |
 | **Interface** | **Web UI** | CLI-only | Metadaten-Review/Edit besser in UI; Batch-Review braucht Übersicht |
 | Backend | FastAPI | Flask, Django | Async, schnell, automatische OpenAPI-Spec |
-| Frontend | HTMX + Alpine.js | React, Vue | Minimaler JS-Footprint, Server-driven, keine Build-Pipeline |
+| Frontend | React + TypeScript + Vite | HTMX + Alpine.js | Complex client-side state (file queue, inline editing, selection) requires React's state management |
 | Deployment | Docker | Native Python | Portabel, isoliert, einfaches Deployment auf User's Infra |
 | API Interface | MCP-Server | REST-API, Direct DB | Abstraktion: Graphiti-Interna sind transparent, kein Fork-Problem |
 | State Storage | SQLite | JSON, Redis | Einfach, lokal, robust, Query-fähig |
 | Chunking Strategy | Semantic (Paragraph) | Fixed-size, Sentence | Graphiti braucht sinnvolle Einheiten |
 | Verification | get_episodes | Nur HTTP Status | Echte Bestätigung dass Episode gespeichert |
-| Metadata Search | OpenLibrary API | Google Books, WorldCat | Kostenlos, keine API-Keys, gute Coverage |
+| Metadata Search | OpenLibrary + CrossRef + ISBN.de | Firecrawl, WorldCat | Strukturierte APIs liefern direkt JSON; Firecrawl braucht AI für Extraktion |
+| Entity-Types | Vereinfacht (Buch, Artikel, RFC) | Document/Work Hierarchie | Gleiche Pflichtfelder = gleicher Typ. Buch=Roman (beide Autor+Titel+Jahr) |
+| Chunking | Semantisch (500-3000 Zeichen) | Seitenbasiert, Fixed-size | Seiten sind keine logischen Einheiten; Paragraph-Gruppen sind semantisch sinnvoll |
+| Rate-Limiting | 1 req/s Start | Aggressiver (5 req/s) | Konservativ starten, bei Bedarf erhöhen |
+| Source-Type | Pflicht-Dropdown | Automatische Klassifikation | Manuelle Klassifikation ist zuverlässiger; User trifft bewusste Entscheidung |
 
 ---
 
@@ -436,4 +473,7 @@ Phase 3 (Markdown) und Phase 4 (Testing) koennen parallel laufen da sie untersch
 
 *Generated: 2026-01-19*
 *Updated: 2026-01-19 - MAJOR PIVOT: CLI → Web Interface. Architektur: FastAPI + HTMX + Docker*
-*Status: DRAFT - Pivot approved, ready for Phase 1 planning*
+*Updated: 2026-01-19 - Open Questions resolved (Chunking, Rate-Limiting, Entity-Types vereinfacht)*
+*Updated: 2026-01-19 - Source-Type Classification (Trust-Level) added, UI language set to English*
+*Updated: 2026-01-19 - Frontend changed from HTMX+Alpine.js to React+TypeScript+Vite (UX analysis)*
+*Status: PHASE 1 IN PROGRESS - All questions resolved, plan created, ready for implementation*

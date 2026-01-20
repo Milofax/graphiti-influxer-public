@@ -1,0 +1,13 @@
+{
+  "forceReCreateRepo": true,
+  "sourceRepoPath": ".",
+  "targetRepoPath": "../graphiti-influxer-public",
+  "allowedPaths": ["**/*"],
+  "ignoredPaths": [
+    ".claude/**",
+    "gitexporter.config.json",
+    ".github/workflows/sync-public.yml"
+  ],
+  "allowedBranches": ["main"],
+  "ignoreAllBranchesExceptAllowed": true
+}

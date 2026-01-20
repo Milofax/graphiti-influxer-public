@@ -17,11 +17,11 @@ Dieses Dokument wird bei jeder Phasen-Planung konsultiert. Cases werden nach Imp
 
 | Phase | Beschreibung |
 |-------|--------------|
-| **P1** | Phase 1: PDF + EPUB Core |
-| **P2** | Phase 2: CLI Polish, Batch, Resume |
+| **P1** | Phase 1: Web Interface MVP (FastAPI + HTMX, PDF/EPUB, Metadaten-Review) |
+| **P2** | Phase 2: Metadaten-Suche (OpenLibrary, CrossRef) |
 | **P3** | Phase 3: Markdown Support |
 | **P4** | Phase 4: Testing & Docs |
-| **P5** | Phase 5: Web Crawling |
+| **P5** | Phase 5: CLI Headless-Mode |
 | **P?** | Unassigned / Future |
 
 ---
@@ -197,15 +197,15 @@ Dieses Dokument wird bei jeder Phasen-Planung konsultiert. Cases werden nach Imp
 
 ---
 
-## 13. CLI/UX
+## 13. CLI/UX (Phase 5)
 
 | # | Status | Case | Risiko | Mitigation | Phase |
 |---|--------|------|--------|------------|-------|
-| 88 | [ ] | Ctrl+C während Verarbeitung | Unkontrollierter Abbruch | Signal-Handler + Cleanup | **P1** |
-| 89 | [ ] | Terminal ohne Farb-Support | Progress-Bar kaputt | Rich auto-detects | **P1** |
-| 90 | [ ] | Piped Output (nicht interaktiv) | Progress-Spam | Rich handles --no-color | **P1** |
-| 91 | [ ] | Falscher Pfad-Argument | FileNotFound | Frühzeitige Validierung | **P1** |
-| 92 | [ ] | --yes ohne --quiet | Unerwartete Prompts trotzdem | Konsistenz prüfen | P2 |
+| 88 | [ ] | Ctrl+C während Verarbeitung | Unkontrollierter Abbruch | Signal-Handler + Cleanup | **P5** |
+| 89 | [ ] | Terminal ohne Farb-Support | Progress-Bar kaputt | Rich auto-detects | **P5** |
+| 90 | [ ] | Piped Output (nicht interaktiv) | Progress-Spam | Rich handles --no-color | **P5** |
+| 91 | [ ] | Falscher Pfad-Argument | FileNotFound | Frühzeitige Validierung | **P5** |
+| 92 | [ ] | --yes ohne --quiet | Unerwartete Prompts trotzdem | Konsistenz prüfen | **P5** |
 
 ---
 
@@ -239,14 +239,57 @@ Dieses Dokument wird bei jeder Phasen-Planung konsultiert. Cases werden nach Imp
 
 ---
 
+## 16. Web Interface
+
+| # | Status | Case | Risiko | Mitigation | Phase |
+|---|--------|------|--------|------------|-------|
+| 109 | [ ] | File Upload > Browser-Limit (oft 100MB) | Upload schlägt fehl | Server-side Limit + Frontend-Check + Clear Error | **P1** |
+| 110 | [ ] | Upload-Abbruch (Browser Tab geschlossen) | Orphan-Dateien | Cleanup bei Session-Timeout | **P1** |
+| 111 | [ ] | Concurrent Uploads (10+ Dateien gleichzeitig) | Server-Überlastung | Queue-System + Max-Concurrent-Limit | **P1** |
+| 112 | [ ] | SSE Connection Drop während Ingestion | Progress-Updates verloren | Reconnect-Logik + Polling-Fallback | **P1** |
+| 113 | [ ] | Session Timeout während Batch-Review | Daten verloren | Session-Persistence (SQLite) + Warnung | **P1** |
+| 114 | [ ] | Browser ohne JavaScript | HTMX funktioniert nicht | Graceful Degradation oder Clear Error | **P1** |
+| 115 | [ ] | Mobile Browser (Touch-only) | Drag-and-Drop funktioniert nicht | Click-Fallback (File-Input) | **P1** |
+| 116 | [ ] | CORS-Probleme (wenn Frontend ≠ Backend Host) | API-Calls blockiert | CORS-Config in FastAPI | **P1** |
+| 117 | [ ] | Slow Network (Dial-up-ähnlich) | Timeouts, schlechte UX | Progress-Feedback + Retry-Option | **P1** |
+| 118 | [ ] | Card-Edit: Concurrent Edit (Race Condition) | Daten überschrieben | Optimistic UI + Last-Write-Wins oder Locking | P2 |
+| 119 | [ ] | Ingest-Button bei unvollständigen Pflichtfeldern | Ungültige Daten in Graphiti | Frontend-Validation + Backend-Validation | **P1** |
+| 120 | [ ] | Group-ID Selector: Neue group_id eingeben | User-Tippfehler | Validation + Autocomplete von bekannten IDs | **P1** |
+
+---
+
+## 17. Metadaten-Suche (nach Dokumenttyp: ISBN→OpenLibrary, DOI→CrossRef, DE-ISBN→ISBN.de)
+
+| # | Status | Case | Risiko | Mitigation | Phase |
+|---|--------|------|--------|------------|-------|
+| 121 | [ ] | ISBN erkannt aber ungültiges Format | Suche schlägt fehl | ISBN-Validation (10/13-stellig, Prüfziffer) | **P1** |
+| 122 | [ ] | DOI erkannt aber ungültiges Format | Suche schlägt fehl | DOI-Validation (10.xxxx/...) | **P1** |
+| 123 | [ ] | Weder ISBN noch DOI erkannt | Keine automatische API-Wahl | Titel-Suche anbieten + User wählt API | **P1** |
+| 124 | [ ] | OpenLibrary: Kein Ergebnis | Buch nicht gefunden | Fallback zu Google Books anbieten | **P1** |
+| 125 | [ ] | OpenLibrary: Mehrere Ergebnisse | Falsches Buch gewählt | Liste anzeigen, User wählt | **P1** |
+| 126 | [ ] | OpenLibrary: Rate-Limiting | 429 Error | Backoff + Clear Error | **P1** |
+| 127 | [ ] | Google Books: Rate-Limiting (100/Tag ohne Key) | Limit erreicht | Clear Error + Hinweis auf API-Key (P2) | **P1** |
+| 128 | [ ] | CrossRef: DOI nicht gefunden | Paper nicht in CrossRef | Clear Error + manuell | **P1** |
+| 129 | [ ] | CrossRef: Rate-Limiting | 429 Error | Backoff + Clear Error | **P1** |
+| 130 | [ ] | ISBN.de: Kein Ergebnis | Deutsches Buch nicht gefunden | Fallback zu OpenLibrary | **P1** |
+| 131 | [ ] | ISBN.de: API/Struktur-Änderung | Scraping bricht | Defensive Parsing + Clear Error | **P1** |
+| 132 | [ ] | API nicht erreichbar (Netzwerk) | Search funktioniert nicht | Timeout + Clear Error | **P1** |
+| 133 | [ ] | Suche während anderer Suche läuft | Race Condition | Debounce + Cancel vorheriger | **P1** |
+| 134 | [ ] | Auto-Fill überschreibt User-Eingabe | Daten verloren | Bestätigung vor Überschreiben | **P1** |
+
+---
+
 ## Zusammenfassung nach Phase
 
 | Phase | Anzahl Cases | Beschreibung |
 |-------|--------------|--------------|
-| **P1** | 69 | PDF + EPUB Core + Metadaten (kritisch für MVP) |
-| **P2** | 29 | CLI Polish, Batch, Resume, Verify |
-| **P?** | 11 | Future / Low Priority |
-| **Total** | **109** | |
+| **P1** | 90 | Web Interface MVP (PDF/EPUB, Metadaten, Web UI, API-Suche) |
+| **P2** | 20 | Batch & Polish, API-Keys, weitere APIs |
+| **P3** | 2 | Markdown Support |
+| **P4** | 4 | Testing & Docs |
+| **P5** | 5 | CLI Headless-Mode |
+| **P?** | 13 | Future / Low Priority |
+| **Total** | **134** | |
 
 ---
 
@@ -256,6 +299,9 @@ Dieses Dokument wird bei jeder Phasen-Planung konsultiert. Cases werden nach Imp
 |-------|----------|
 | 2026-01-19 | Initial: 96 Cases aus Review-Session |
 | 2026-01-19 | +12 Cases: Sektion 15 "Metadaten/Entity-Types" (#97-#108) |
+| 2026-01-19 | **PIVOT CLI→Web**: Phasen-Struktur angepasst, CLI-Cases (#88-92) → P5 |
+| 2026-01-19 | +12 Cases: Sektion 16 "Web Interface" (#109-#120) |
+| 2026-01-19 | +14 Cases: Sektion 17 "Metadaten-Suche" (#121-#134), typ-basierte API-Wahl statt Wasserfall |
 
 ---
 
